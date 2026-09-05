@@ -117,7 +117,7 @@ export default function Stats() {
                     {['', '2021', '2022', '2023', '2024', '2025'].map(y => (
                         <button key={y} onClick={() => setYearFilter(y)}
                             style={{
-                                padding: '0.5rem 1.2rem', borderRadius: '20px', border: 'none',
+                                padding: '0.5rem 1.2rem', borderRadius: '20px',
                                 cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem', transition: 'all 0.2s',
                                 background: yearFilter === y ? '#4f46e5' : 'var(--surface)',
                                 color: yearFilter === y ? 'white' : 'var(--text-secondary)',
