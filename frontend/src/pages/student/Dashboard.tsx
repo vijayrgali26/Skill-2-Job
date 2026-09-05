@@ -23,6 +23,23 @@ interface StudentDashboardData {
   skill_breakdown: Record<string, number>;
   matched_job_count: number;
   top_recommendations: JobRecommendation[];
+  dream_job_progress: {
+    dream_job: string | null;
+    target_job: { id: number; title: string } | null;
+    match_score: number;
+    matched_skills: number;
+    required_skills: number;
+    missing_skills: string[];
+    recommended_courses: Array<{
+      skill: string;
+      courses: Array<{
+        id: number;
+        course_name: string;
+        provider: string | null;
+        url: string | null;
+      }>;
+    }>;
+  };
 }
 
 export default function StudentDashboard() {
@@ -158,7 +175,57 @@ export default function StudentDashboard() {
           <div className="dashboard-col">
             {/* AI Placement Prediction */}
             <div className="dash-widget">
-              <h3 className="dash-widget-title">🤖 AI Placement Prediction</h3>
+              <h3 className="dash-widget-title" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                🤖 AI Placement Prediction
+                <details style={{ position: 'relative', display: 'inline-block' }}>
+                  <summary
+                    aria-label="How the placement prediction is calculated"
+                    title="See prediction criteria"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: '1.15rem',
+                      height: '1.15rem',
+                      border: '1px solid currentColor',
+                      borderRadius: '50%',
+                      fontSize: '0.72rem',
+                      cursor: 'pointer',
+                      listStyle: 'none',
+                    }}
+                  >
+                    i
+                  </summary>
+                  <div
+                    style={{
+                      position: 'absolute',
+                      zIndex: 5,
+                      top: '1.6rem',
+                      left: 0,
+                      width: '16rem',
+                      padding: '0.75rem',
+                      background: 'var(--surface, #fff)',
+                      border: '1px solid var(--border, #e2e8f0)',
+                      borderRadius: '0.5rem',
+                      boxShadow: '0 8px 24px rgba(15, 23, 42, 0.15)',
+                      fontSize: '0.78rem',
+                      fontWeight: 400,
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    <strong>Prediction criteria</strong>
+                    <div>CGPA: 30%</div>
+                    <div>Skills: 25%</div>
+                    <div>Projects: 20%</div>
+                    <div>Certifications: 10%</div>
+                    <div>Skill coverage: 15%</div>
+                    <div style={{ marginTop: '0.35rem', color: 'var(--text-secondary)' }}>
+                      With enough placement history, a Random Forest model uses these same five inputs.
+                      Otherwise, the weighted estimate is shown.
+                    </div>
+                  </div>
+                </details>
+              </h3>
               <div className="prediction-ring-container">
                 <div className="prediction-ring">
                   <svg viewBox="0 0 100 100" className="prediction-svg">
@@ -221,6 +288,76 @@ export default function StudentDashboard() {
 
           {/* Right Column */}
           <div className="dashboard-col">
+            {/* Dream job progress */}
+            <div className="dash-widget">
+              <div className="dash-widget-header">
+                <h3 className="dash-widget-title">🎯 Dream Job</h3>
+                <Link to="/student/profile" className="dash-widget-link">Edit →</Link>
+              </div>
+              {data?.dream_job_progress.dream_job ? (
+                <>
+                  <h2 style={{ margin: '0.25rem 0 0.5rem' }}>
+                    {data.dream_job_progress.dream_job}
+                  </h2>
+                  <p className="text-muted">
+                    {data.dream_job_progress.target_job
+                      ? `Closest role: ${data.dream_job_progress.target_job.title}`
+                      : 'Add skills to start measuring your progress.'}
+                  </p>
+                  <div className="skill-bar-track" style={{ marginTop: '1rem' }}>
+                    <div
+                      className="skill-bar-fill"
+                      style={{ width: `${data.dream_job_progress.match_score}%` }}
+                    />
+                  </div>
+                  <p style={{ margin: '0.5rem 0 0' }}>
+                    <strong>{data.dream_job_progress.match_score.toFixed(0)}%</strong> skill match
+                    {' · '}
+                    {data.dream_job_progress.matched_skills}/{data.dream_job_progress.required_skills} skills covered
+                  </p>
+                  {data.dream_job_progress.missing_skills.length > 0 && (
+                    <>
+                      <p className="text-muted" style={{ marginBottom: '0.5rem' }}>
+                        Missing skills: {data.dream_job_progress.missing_skills.slice(0, 3).join(', ')}
+                      </p>
+                      {data.dream_job_progress.recommended_courses.some(
+                        (group) => group.courses.length > 0
+                      ) && (
+                        <div style={{ marginTop: '0.75rem' }}>
+                          <strong>Recommended courses</strong>
+                          {data.dream_job_progress.recommended_courses
+                            .filter((group) => group.courses.length > 0)
+                            .slice(0, 3)
+                            .map((group) => (
+                              <div key={group.skill} style={{ marginTop: '0.5rem' }}>
+                                <span className="text-muted">{group.skill}: </span>
+                                {group.courses.slice(0, 2).map((course, index) => (
+                                  <span key={course.id}>
+                                    {index > 0 && ' · '}
+                                    {course.url ? (
+                                      <a href={course.url} target="_blank" rel="noopener noreferrer">
+                                        {course.course_name}
+                                      </a>
+                                    ) : (
+                                      course.course_name
+                                    )}
+                                  </span>
+                                ))}
+                              </div>
+                            ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </>
+              ) : (
+                <p className="empty-text">
+                  Set a dream job to get a personalized skill roadmap.{' '}
+                  <Link to="/student/profile">Set your target →</Link>
+                </p>
+              )}
+            </div>
+
             {/* Top Job Recommendations */}
             <div className="dash-widget">
               <div className="dash-widget-header">

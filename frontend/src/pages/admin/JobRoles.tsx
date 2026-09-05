@@ -15,6 +15,7 @@ interface JobRole {
   description: string | null;
   required_skills_json: string | null;
   cgpa_threshold: number | null;
+  salary_lpa_min: number | null;
   academic_status: string | null;
   is_active: boolean;
   created_at: string | null;
@@ -26,6 +27,7 @@ interface JobForm {
   description: string;
   required_skills: string;
   cgpa_threshold: string;
+  salary_lpa_min: string;
   academic_status: string;
 }
 
@@ -35,6 +37,7 @@ const emptyForm: JobForm = {
   description: '',
   required_skills: '',
   cgpa_threshold: '0',
+  salary_lpa_min: '',
   academic_status: '',
 };
 
@@ -101,6 +104,7 @@ export default function JobRoles() {
       description: form.description.trim() || null,
       required_skills: parseSkills(form.required_skills),
       cgpa_threshold: parseFloat(form.cgpa_threshold) || 0,
+      salary_lpa_min: form.salary_lpa_min.trim() ? parseFloat(form.salary_lpa_min) : null,
       academic_status: form.academic_status.trim() || null,
     };
 
@@ -144,6 +148,7 @@ export default function JobRoles() {
       description: j.description || '',
       required_skills: skills,
       cgpa_threshold: String(j.cgpa_threshold ?? 0),
+      salary_lpa_min: j.salary_lpa_min != null ? String(j.salary_lpa_min) : '',
       academic_status: j.academic_status || '',
     });
     setFormError('');
@@ -248,6 +253,20 @@ export default function JobRoles() {
                 onChange={handleChange}
                 className="input"
                 placeholder="e.g. Final Year"
+              />
+            </label>
+            <label className="label-col">
+              Minimum Package (LPA)
+              <input
+                name="salary_lpa_min"
+                value={form.salary_lpa_min}
+                onChange={handleChange}
+                className="input"
+                type="number"
+                step="0.1"
+                min="0"
+                max="100"
+                placeholder="Optional"
               />
             </label>
           </div>

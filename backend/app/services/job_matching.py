@@ -8,12 +8,20 @@ Requirements: 6.1, 6.2, 6.3, 6.6, 7.1, 7.2, 7.3, 7.4, 10.1, 10.2, 10.3
 """
 
 import json
+import re
 
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 
 from app import db
-from app.models import StudentProfile, JobRole, Company, User, SkillTaxonomy
+from app.models import (
+    StudentProfile,
+    JobRole,
+    Company,
+    User,
+    SkillTaxonomy,
+    CourseRecommendation,
+)
 
 
 class JobMatchingEngine:
@@ -115,12 +123,31 @@ class JobMatchingEngine:
 
             job_vector = np.array(job_vector_data["vector"], dtype=float)
 
-            # 4. Compute compatibility score
-            score = self.compute_compatibility(student_vector, job_vector)
+            # 4. Compute compatibility score, giving the student's stated
+            # career target a modest ranking boost when it is available.
+            skill_score = self.compute_compatibility(student_vector, job_vector)
+            title_score = self.compute_dream_job_title_match(
+                profile.dream_job, job.title
+            )
+            score = (
+                (skill_score * 0.8) + (title_score * 0.2)
+                if profile.dream_job
+                else skill_score
+            )
 
             # Get company name
             company = db.session.get(Company, job.company_id)
             company_name = company.name if company else "Unknown"
+            if profile.preferred_company and (
+                profile.preferred_company.strip().lower() != company_name.strip().lower()
+            ):
+                continue
+            if (
+                profile.expected_lpa is not None
+                and job.salary_lpa_min is not None
+                and job.salary_lpa_min < profile.expected_lpa
+            ):
+                continue
 
             # Parse required skills
             required_skills = []
@@ -135,6 +162,8 @@ class JobMatchingEngine:
                 "title": job.title,
                 "company_name": company_name,
                 "compatibility_score": round(score * 100, 1),
+                "skill_compatibility_score": round(skill_score * 100, 1),
+                "dream_job_match": round(title_score * 100, 1),
                 "required_skills": required_skills,
             })
 
@@ -143,6 +172,126 @@ class JobMatchingEngine:
 
         # 6. Return top N
         return results[:limit]
+
+    def compute_dream_job_title_match(
+        self, dream_job: str | None, job_title: str | None
+    ) -> float:
+        """Return a normalized token-overlap score for two role titles."""
+        dream_tokens = self._role_tokens(dream_job)
+        title_tokens = self._role_tokens(job_title)
+        if not dream_tokens or not title_tokens:
+            return 0.0
+        return len(dream_tokens & title_tokens) / len(dream_tokens)
+
+    def get_dream_job_progress(self, student_id: int) -> dict:
+        """Summarize progress toward the student's selected dream job."""
+        profile = StudentProfile.query.filter_by(user_id=student_id).first()
+        if not profile or not profile.dream_job:
+            return {
+                "dream_job": None,
+                "target_job": None,
+                "match_score": 0,
+                "matched_skills": 0,
+                "required_skills": 0,
+                "missing_skills": [],
+                "recommended_courses": [],
+            }
+
+        student_data = self._parse_vector_json(profile.skill_vector_json)
+        if student_data is None:
+            return {
+                "dream_job": profile.dream_job,
+                "target_job": None,
+                "match_score": 0,
+                "matched_skills": 0,
+                "required_skills": 0,
+                "missing_skills": [],
+                "recommended_courses": [],
+            }
+
+        student_vector = np.array(student_data["vector"], dtype=float)
+        candidates = []
+        for job in JobRole.query.filter_by(is_active=True).all():
+            job_data = self._parse_vector_json(job.job_vector_json)
+            if job_data is None:
+                continue
+            job_vector = np.array(job_data["vector"], dtype=float)
+            title_score = self.compute_dream_job_title_match(profile.dream_job, job.title)
+            skill_score = self.compute_compatibility(student_vector, job_vector)
+            candidates.append((title_score, skill_score, job))
+
+        if not candidates:
+            return {
+                "dream_job": profile.dream_job,
+                "target_job": None,
+                "match_score": 0,
+                "matched_skills": 0,
+                "required_skills": 0,
+                "missing_skills": [],
+                "recommended_courses": [],
+            }
+
+        _, skill_score, job = max(
+            candidates, key=lambda item: (item[0], item[1])
+        )
+        required_skills = self._parse_required_skills(job.required_skills_json)
+        missing_skills = self._missing_required_skills(profile, required_skills)
+        recommended_courses = []
+        for skill in missing_skills:
+            courses = CourseRecommendation.query.filter(
+                db.func.lower(CourseRecommendation.skill_name) == skill.lower()
+            ).limit(3).all()
+            recommended_courses.append({
+                "skill": skill,
+                "courses": [course.to_dict() for course in courses],
+            })
+        return {
+            "dream_job": profile.dream_job,
+            "target_job": {"id": job.id, "title": job.title},
+            "match_score": round(skill_score * 100, 1),
+            "matched_skills": max(0, len(required_skills) - len(missing_skills)),
+            "required_skills": len(required_skills),
+            "missing_skills": missing_skills,
+            "recommended_courses": recommended_courses,
+        }
+
+    @staticmethod
+    def _role_tokens(value: str | None) -> set[str]:
+        if not value:
+            return set()
+        ignored = {"a", "an", "the", "and", "for", "of", "role", "engineer", "developer"}
+        return {
+            token for token in re.findall(r"[a-z0-9]+", value.lower())
+            if token not in ignored
+        } or set(re.findall(r"[a-z0-9]+", value.lower()))
+
+    @staticmethod
+    def _parse_required_skills(raw_skills: str | None) -> list[str]:
+        if not raw_skills:
+            return []
+        try:
+            parsed = json.loads(raw_skills)
+            return [str(skill) for skill in parsed if str(skill).strip()]
+        except (json.JSONDecodeError, TypeError):
+            return []
+
+    def _missing_required_skills(
+        self, profile: StudentProfile, required_skills: list[str]
+    ) -> list[str]:
+        student_skills = set()
+        if profile.skills_json:
+            try:
+                student_skills = {
+                    str(skill).strip().lower()
+                    for skill in json.loads(profile.skills_json)
+                    if str(skill).strip()
+                }
+            except (json.JSONDecodeError, TypeError):
+                student_skills = set()
+        return [
+            skill for skill in required_skills
+            if skill.strip().lower() not in student_skills
+        ]
 
     def compute_skill_gap(
         self,

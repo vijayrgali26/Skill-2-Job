@@ -24,6 +24,7 @@ interface ProfileData {
   graduation_year: string;
   dream_job: string;
   expected_lpa: string;
+  preferred_company: string;
   skills: string[];
   projects: ProjectEntry[];
   certifications: CertificationEntry[];
@@ -37,6 +38,7 @@ interface FieldErrors {
   graduation_year?: string;
   dream_job?: string;
   expected_lpa?: string;
+  preferred_company?: string;
   general?: string;
 }
 
@@ -56,6 +58,7 @@ export default function Profile() {
     graduation_year: '',
     dream_job: '',
     expected_lpa: '',
+    preferred_company: '',
     skills: [],
     projects: [],
     certifications: [],
@@ -83,6 +86,7 @@ export default function Profile() {
           graduation_year: d.graduation_year != null ? String(d.graduation_year) : '',
           dream_job: d.dream_job ?? '',
           expected_lpa: d.expected_lpa != null ? String(d.expected_lpa) : '',
+          preferred_company: d.preferred_company ?? '',
           skills: Array.isArray(d.skills_json) ? d.skills_json : (d.skills_json ? tryParseSkills(d.skills_json) : []),
           projects: Array.isArray(d.projects) ? d.projects : [],
           certifications: Array.isArray(d.certifications) ? d.certifications : [],
@@ -161,6 +165,7 @@ export default function Profile() {
         graduation_year: parseInt(form.graduation_year, 10),
         dream_job: form.dream_job || null,
         expected_lpa: form.expected_lpa.trim() ? parseFloat(form.expected_lpa) : null,
+        preferred_company: form.preferred_company.trim() || null,
         skills: form.skills,
         projects: form.projects,
         certifications: form.certifications,
@@ -209,6 +214,7 @@ export default function Profile() {
         graduation_year: extracted.graduation_year != null ? String(extracted.graduation_year) : '',
         dream_job: '',
         expected_lpa: '',
+        preferred_company: '',
         skills: Array.isArray(extracted.skills) ? extracted.skills : [],
         projects: Array.isArray(extracted.projects) ? extracted.projects : [],
         certifications: Array.isArray(extracted.certifications) ? extracted.certifications : [],
@@ -439,8 +445,19 @@ export default function Profile() {
             <input id="dream_job" type="text" value={form.dream_job}
               maxLength={150}
               placeholder="e.g., Full Stack Developer, Data Scientist"
+              list="dream-job-suggestions"
               onChange={(e) => setForm({ ...form, dream_job: e.target.value })}
               className={`input${errors.dream_job ? ' input-error' : ''}`} />
+            <datalist id="dream-job-suggestions">
+              <option value="Full Stack Developer" />
+              <option value="Frontend Developer" />
+              <option value="Backend Developer" />
+              <option value="Data Scientist" />
+              <option value="Machine Learning Engineer" />
+              <option value="Cloud Engineer" />
+              <option value="DevOps Engineer" />
+              <option value="Cybersecurity Analyst" />
+            </datalist>
             {errors.dream_job && <span className="field-error">{errors.dream_job}</span>}
             <span className="helper-text">{form.dream_job.length}/150 characters</span>
           </div>
@@ -453,6 +470,18 @@ export default function Profile() {
               onChange={(e) => setForm({ ...form, expected_lpa: e.target.value })}
               className={`input${errors.expected_lpa ? ' input-error' : ''}`} />
             {errors.expected_lpa && <span className="field-error">{errors.expected_lpa}</span>}
+          </div>
+
+          <div className="field">
+            <label htmlFor="preferred_company" className="label">Preferred Company (optional)</label>
+            <input id="preferred_company" type="text" value={form.preferred_company}
+              maxLength={255}
+              placeholder="e.g., Google, Infosys, Microsoft"
+              onChange={(e) => setForm({ ...form, preferred_company: e.target.value })}
+              className={`input${errors.preferred_company ? ' input-error' : ''}`} />
+            <span className="helper-text">
+              We will alert you when this company posts a matching dream-job role.
+            </span>
           </div>
         </div>
 
