@@ -120,6 +120,14 @@ def create_or_update_profile(user_id: int, data: dict) -> dict:
                 raise ValueError({"expected_lpa": "expected_lpa must be between 0.0 and 100.0"})
         profile.expected_lpa = expected_lpa
 
+    if "preferred_company" in data:
+        preferred_company = data["preferred_company"]
+        profile.preferred_company = (
+            str(preferred_company).strip()[:255]
+            if preferred_company is not None and str(preferred_company).strip()
+            else None
+        )
+
     # ---- 4. Handle skills ----
     skills = data.get("skills")
     if skills is not None:

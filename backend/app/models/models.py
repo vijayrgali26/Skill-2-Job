@@ -76,6 +76,7 @@ class StudentProfile(db.Model):
     skill_vector_json = db.Column(db.Text, nullable=True)
     dream_job = db.Column(db.String(150), nullable=True)
     expected_lpa = db.Column(db.Float, nullable=True)
+    preferred_company = db.Column(db.String(255), nullable=True)
     updated_at = db.Column(
         db.DateTime,
         nullable=False,
@@ -111,6 +112,7 @@ class StudentProfile(db.Model):
             "skill_vector_json": self.skill_vector_json,
             "dream_job": self.dream_job,
             "expected_lpa": self.expected_lpa,
+            "preferred_company": self.preferred_company,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "projects": [p.to_dict() for p in self.projects],
             "certifications": [c.to_dict() for c in self.certifications],
@@ -231,6 +233,7 @@ class JobRole(db.Model):
     required_skills_json = db.Column(db.Text, nullable=True)
     job_vector_json = db.Column(db.Text, nullable=True)
     cgpa_threshold = db.Column(db.Float, nullable=True, default=0.0)
+    salary_lpa_min = db.Column(db.Float, nullable=True)
     academic_status = db.Column(db.String(50), nullable=True)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
@@ -257,6 +260,7 @@ class JobRole(db.Model):
             "required_skills_json": self.required_skills_json,
             "job_vector_json": self.job_vector_json,
             "cgpa_threshold": self.cgpa_threshold,
+            "salary_lpa_min": self.salary_lpa_min,
             "academic_status": self.academic_status,
             "is_active": self.is_active,
             "created_at": self.created_at.isoformat() if self.created_at else None,
@@ -609,6 +613,7 @@ class Notification(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     sent_by = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    target_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
     title = db.Column(db.String(255), nullable=False)
     message = db.Column(db.Text, nullable=False)
     target_audience = db.Column(db.String(50), nullable=False, default="all_students")
@@ -637,6 +642,7 @@ class Notification(db.Model):
         return {
             "id": self.id,
             "sent_by": self.sent_by,
+            "target_user_id": self.target_user_id,
             "sender_name": sender_name,
             "title": self.title,
             "message": self.message,

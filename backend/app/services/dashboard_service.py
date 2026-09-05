@@ -55,6 +55,14 @@ class DashboardService:
                 "skill_breakdown": {},
                 "matched_job_count": 0,
                 "top_recommendations": [],
+                "dream_job_progress": {
+                    "dream_job": None,
+                    "target_job": None,
+                    "match_score": 0,
+                    "matched_skills": 0,
+                    "required_skills": 0,
+                    "missing_skills": [],
+                },
             }
 
         # --- Profile completeness ---
@@ -70,6 +78,7 @@ class DashboardService:
 
         # --- Top recommendations ---
         top_recommendations = self._get_top_recommendations(user_id)
+        dream_job_progress = self.job_matching.get_dream_job_progress(user_id)
 
         return {
             "profile_completeness": profile_completeness,
@@ -77,6 +86,7 @@ class DashboardService:
             "skill_breakdown": skill_breakdown,
             "matched_job_count": matched_job_count,
             "top_recommendations": top_recommendations,
+            "dream_job_progress": dream_job_progress,
         }
 
     # ------------------------------------------------------------------

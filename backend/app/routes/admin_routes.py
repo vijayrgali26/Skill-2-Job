@@ -323,11 +323,13 @@ def create_job():
         required_skills_json=json.dumps(required_skills) if required_skills else None,
         job_vector_json=job_vector_json,
         cgpa_threshold=json_data.get("cgpa_threshold", 0.0),
+        salary_lpa_min=json_data.get("salary_lpa_min"),
         academic_status=json_data.get("academic_status"),
         is_active=True,
     )
     db.session.add(job_role)
     db.session.commit()
+    _notify_matching_dream_job_students(job_role)
 
     return jsonify(job_role.to_dict()), 201
 
@@ -397,6 +399,8 @@ def update_job(id):
         job_role.description = json_data["description"]
     if "cgpa_threshold" in json_data:
         job_role.cgpa_threshold = json_data["cgpa_threshold"]
+    if "salary_lpa_min" in json_data:
+        job_role.salary_lpa_min = json_data["salary_lpa_min"]
     if "academic_status" in json_data:
         job_role.academic_status = json_data["academic_status"]
     if "is_active" in json_data:
@@ -445,8 +449,58 @@ def update_job(id):
             job_role.job_vector_json = None
 
     db.session.commit()
+    _notify_matching_dream_job_students(job_role)
 
     return jsonify(job_role.to_dict()), 200
+
+
+def _notify_matching_dream_job_students(job_role: JobRole) -> None:
+    """Notify students whose optional career preferences match a live job."""
+    if not job_role.is_active:
+        return
+
+    company = db.session.get(Company, job_role.company_id)
+    if company is None:
+        return
+
+    profiles = StudentProfile.query.filter(
+        StudentProfile.dream_job.isnot(None),
+        StudentProfile.expected_lpa.isnot(None),
+    ).all()
+    for profile in profiles:
+        title_match = JobMatchingEngine().compute_dream_job_title_match(
+            profile.dream_job, job_role.title
+        )
+        company_match = (
+            not profile.preferred_company
+            or profile.preferred_company.strip().lower() == company.name.strip().lower()
+        )
+        package_match = (
+            job_role.salary_lpa_min is None
+            or job_role.salary_lpa_min >= profile.expected_lpa
+        )
+        if title_match <= 0 or not company_match or not package_match:
+            continue
+        message = (
+            f"{company.name} is hiring for {job_role.title}. "
+            "Review this opportunity in your job recommendations."
+        )
+        already_notified = Notification.query.filter_by(
+            target_user_id=profile.user_id,
+            title="Your dream job is hiring!",
+            message=message,
+        ).first()
+        if already_notified:
+            continue
+        db.session.add(Notification(
+            sent_by=g.current_user["user_id"],
+            target_user_id=profile.user_id,
+            title="Your dream job is hiring!",
+            message=message,
+            target_audience="individual",
+            recipient_count=1,
+        ))
+    db.session.commit()
 
 
 @admin_bp.route("/jobs/<int:id>", methods=["DELETE"])

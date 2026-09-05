@@ -53,7 +53,10 @@ def list_student_notifications():
     # Build query: show notifications for this student
     query = Notification.query
 
-    conditions = [Notification.target_audience == "all_students"]
+    conditions = [
+        Notification.target_user_id == user_id,
+        Notification.target_audience == "all_students",
+    ]
     if is_shortlisted:
         conditions.append(Notification.target_audience == "shortlisted")
     if branch:

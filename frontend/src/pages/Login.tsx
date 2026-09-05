@@ -40,6 +40,13 @@ export default function Login() {
 
   const successMessage =
     (location.state as { message?: string } | null)?.message ?? '';
+  const requestedRole = new URLSearchParams(location.search).get('role');
+  const roleLabel =
+    requestedRole === 'admin'
+      ? 'admin'
+      : requestedRole === 'placement_officer'
+        ? 'placement officer'
+        : 'student';
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -77,7 +84,7 @@ export default function Login() {
     <div className="auth-container">
       <div className="auth-card">
         <h1 className="auth-brand">Skill2Job</h1>
-        <h2 className="auth-subtitle">Sign In</h2>
+        <h2 className="auth-subtitle">Sign in as {roleLabel}</h2>
 
         {successMessage && (
           <div className="auth-success-banner">{successMessage}</div>
