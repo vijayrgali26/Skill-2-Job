@@ -12,7 +12,7 @@ from flask import Blueprint, jsonify, request
 from app import db
 from app.models import User, StudentProfile, Company, JobRole, PlacementRecord
 from app.utils.auth_decorator import jwt_required
-from sqlalchemy import func
+from sqlalchemy import extract, func
 
 stats_bp = Blueprint("stats", __name__, url_prefix="/api/stats")
 
@@ -37,7 +37,7 @@ def get_stats():
     placed_base = db.session.query(func.count(func.distinct(PlacementRecord.profile_id)))
     if year_filter:
         placed_base = placed_base.filter(
-            func.year(PlacementRecord.placement_date) == year_filter
+            extract("year", PlacementRecord.placement_date) == year_filter
         )
     placed_students = placed_base.scalar() or 0
     total_companies = Company.query.count()
@@ -46,8 +46,8 @@ def get_stats():
     avg_pkg_q = db.session.query(func.avg(PlacementRecord.package_lpa))
     max_pkg_q = db.session.query(func.max(PlacementRecord.package_lpa))
     if year_filter:
-        avg_pkg_q = avg_pkg_q.filter(func.year(PlacementRecord.placement_date) == year_filter)
-        max_pkg_q = max_pkg_q.filter(func.year(PlacementRecord.placement_date) == year_filter)
+        avg_pkg_q = avg_pkg_q.filter(extract("year", PlacementRecord.placement_date) == year_filter)
+        max_pkg_q = max_pkg_q.filter(extract("year", PlacementRecord.placement_date) == year_filter)
     avg_pkg = avg_pkg_q.scalar()
     max_pkg = max_pkg_q.scalar()
 
@@ -55,13 +55,13 @@ def get_stats():
     yearly = []
     for yr in [2021, 2022, 2023, 2024, 2025]:
         cnt = db.session.query(func.count(PlacementRecord.id)).filter(
-            func.year(PlacementRecord.placement_date) == yr
+            extract("year", PlacementRecord.placement_date) == yr
         ).scalar() or 0
         # Total students that graduated that year
         total_yr = StudentProfile.query.filter_by(graduation_year=yr).count()
         rate = round(cnt / total_yr * 100, 1) if total_yr else 0
         avg_yr = db.session.query(func.avg(PlacementRecord.package_lpa)).filter(
-            func.year(PlacementRecord.placement_date) == yr
+            extract("year", PlacementRecord.placement_date) == yr
         ).scalar()
         yearly.append({
             "year": yr,
@@ -81,7 +81,7 @@ def get_stats():
     )
     if year_filter:
         branch_q = branch_q.filter(
-            func.year(PlacementRecord.placement_date) == year_filter
+            extract("year", PlacementRecord.placement_date) == year_filter
         )
     branch_rows = branch_q.all()
 
@@ -115,7 +115,7 @@ def get_stats():
     )
     if year_filter:
         company_q = company_q.filter(
-            func.year(PlacementRecord.placement_date) == year_filter
+            extract("year", PlacementRecord.placement_date) == year_filter
         )
     company_q = (
         company_q
@@ -140,7 +140,7 @@ def get_stats():
     )
     if year_filter:
         campus_q = campus_q.filter(
-            func.year(PlacementRecord.placement_date) == year_filter
+            extract("year", PlacementRecord.placement_date) == year_filter
         )
     on_campus = off_campus = 0
     for note, cnt in campus_q.all():
@@ -156,7 +156,7 @@ def get_stats():
     )
     if year_filter:
         role_q = role_q.filter(
-            func.year(PlacementRecord.placement_date) == year_filter
+            extract("year", PlacementRecord.placement_date) == year_filter
         )
     role_q = (
         role_q
@@ -173,7 +173,7 @@ def get_stats():
         PlacementRecord.package_lpa.isnot(None)
     )
     if year_filter:
-        pkg_q = pkg_q.filter(func.year(PlacementRecord.placement_date) == year_filter)
+        pkg_q = pkg_q.filter(extract("year", PlacementRecord.placement_date) == year_filter)
     for (pkg,) in pkg_q.all():
         if pkg < 5:       pkg_ranges["0-5 LPA"] += 1
         elif pkg < 10:    pkg_ranges["5-10 LPA"] += 1
@@ -203,7 +203,7 @@ def get_stats():
     )
     if year_filter:
         placed_list_q = placed_list_q.filter(
-            func.year(PlacementRecord.placement_date) == year_filter
+            extract("year", PlacementRecord.placement_date) == year_filter
         )
     placed_list_q = placed_list_q.order_by(PlacementRecord.placement_date.desc()).limit(50)
 
