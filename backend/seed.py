@@ -18,6 +18,10 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 import bcrypt
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from app import create_app, db
 from app.models import User, SkillTaxonomy
 
