@@ -17,33 +17,13 @@ interface ProfileData {
 const TEMPLATES = [
   {
     id: 'classic', name: 'Classic', hasPhoto: false, color: '#1a237e',
-    desc: 'Traditional professional layout with blue headers',
+    desc: 'ATS-friendly professional layout with clear sections and blue headers',
     preview: ['▬▬▬▬▬▬▬▬▬▬▬', '━━━━━━━━━━━━━━━━━━━━', '▪ Education', '▪ Skills', '▪ Projects'],
   },
   {
-    id: 'modern', name: 'Modern', hasPhoto: false, color: '#0d9488',
-    desc: 'Teal accent with bold filled section headers',
-    preview: ['▬▬▬▬▬  ▬▬▬▬▬', '████████████', '████ Education', '████ Skills', '████ Projects'],
-  },
-  {
-    id: 'minimal', name: 'Minimal', hasPhoto: false, color: '#111827',
-    desc: 'Clean black & white typography, ultra readable',
-    preview: ['JOHN DOE', '──────────────────────', 'SUMMARY', 'EDUCATION', 'SKILLS'],
-  },
-  {
     id: 'sidebar', name: 'Sidebar', hasPhoto: true, color: '#1e293b',
-    desc: 'Dark sidebar with photo circle + right content',
+    desc: 'Professional photo layout with an ATS-readable content column',
     preview: ['◑ SIDEBAR + CONTENT', '██ Contact', '██ Skills', '  │ Objective', '  │ Projects'],
-  },
-  {
-    id: 'executive', name: 'Executive', hasPhoto: true, color: '#7c3aed',
-    desc: 'Dark banner header with photo, premium look',
-    preview: ['████████████████ ◉', 'Name & Contact', '──────────────', '▪ Objective', '▪ Projects'],
-  },
-  {
-    id: 'photo_card', name: 'Photo Card', hasPhoto: true, color: '#b91c1c',
-    desc: 'Red card header with photo initials circle',
-    preview: ['▓▓▓▓▓▓▓▓▓▓▓▓▓ ◉', '▓ Name | Dept ▓', '──────────────', '▪ Education', '▪ Skills'],
   },
 ];
 
@@ -65,6 +45,7 @@ export default function Resume() {
   const [fillData, setFillData] = useState<Record<string, string>>({});
   const [generating, setGenerating] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [atsScore, setAtsScore] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploads, setUploads] = useState<ResumeUploadEntry[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -106,7 +87,8 @@ export default function Resume() {
       );
     }
     try {
-      await api.post('/resume/generate', { template: selectedTemplate, profile_override: po });
+      const response = await api.post('/resume/generate', { template: selectedTemplate, profile_override: po });
+      setAtsScore(response.data.ats_score ?? null);
       showToast('Resume generated!', 'success');
     } catch (err) {
       const msg = err instanceof AxiosError ? err.response?.data?.error?.message ?? 'Failed' : 'Connection error';
@@ -123,6 +105,8 @@ export default function Resume() {
     setDownloading(true); setError('');
     try {
       const res = await api.get(`/resume/download?template=${selectedTemplate}`, { responseType: 'blob' });
+      const score = res.headers['x-ats-score'];
+      if (score) setAtsScore(Number(score));
       const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
       const a = document.createElement('a'); a.href = url; a.download = 'resume.pdf';
       document.body.appendChild(a); a.click();
@@ -136,7 +120,10 @@ export default function Resume() {
     setUploading(true);
     try {
       const fd = new FormData(); fd.append('resume', selectedFile);
-      await api.post('/resume/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const response = await api.post('/resume/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      if (response.data.profile) setProfile(response.data.profile);
+      const refreshedProfile = await api.get('/profile');
+      setProfile(refreshedProfile.data);
       showToast('Uploaded!', 'success'); setSelectedFile(null);
       api.get('/resume/uploads').then(r => setUploads(r.data.uploads ?? []));
     } catch { setError('Upload failed.'); }
@@ -170,36 +157,11 @@ export default function Resume() {
             Select a style that suits you. Templates with 📷 include a photo/initials circle.
           </p>
 
-          {/* Without Photo */}
-          <h3 style={{
-            fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-secondary)',
-            textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.75rem'
-          }}>
-            Without Photo
-          </h3>
           <div style={{
-            display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+            display: 'flex', flexDirection: 'row', flexWrap: 'wrap',
             gap: '1rem', marginBottom: '1.5rem'
           }}>
-            {TEMPLATES.filter(t => !t.hasPhoto).map(t => (
-              <TemplateCard key={t.id} t={t}
-                selected={selectedTemplate === t.id}
-                onSelect={() => setSelectedTemplate(t.id)} />
-            ))}
-          </div>
-
-          {/* With Photo */}
-          <h3 style={{
-            fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-secondary)',
-            textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.75rem'
-          }}>
-            With Photo / Initials
-          </h3>
-          <div style={{
-            display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-            gap: '1rem', marginBottom: '1.5rem'
-          }}>
-            {TEMPLATES.filter(t => t.hasPhoto).map(t => (
+            {TEMPLATES.map(t => (
               <TemplateCard key={t.id} t={t}
                 selected={selectedTemplate === t.id}
                 onSelect={() => setSelectedTemplate(t.id)} />
@@ -212,9 +174,16 @@ export default function Resume() {
               {generating ? 'Generating...' : '⚡ Generate Resume'}
             </button>
             {step === 'done' && (
-              <button onClick={handleDownload} disabled={downloading} className="btn btn-success">
-                {downloading ? 'Downloading...' : '⬇ Download PDF'}
-              </button>
+              <>
+                <button onClick={handleDownload} disabled={downloading} className="btn btn-success">
+                  {downloading ? 'Downloading...' : '⬇ Download PDF'}
+                </button>
+                {atsScore !== null && (
+                  <span className="alert alert-success" style={{ margin: 0 }}>
+                    ATS score: <strong>{atsScore}/100</strong>
+                  </span>
+                )}
+              </>
             )}
           </div>
 
@@ -408,6 +377,8 @@ function TemplateCard({ t, selected, onSelect }: {
         transition: 'all 0.2s ease',
         boxShadow: selected ? `0 0 0 3px ${t.color}30` : 'var(--shadow-xs)',
         position: 'relative',
+        flex: '1 1 280px',
+        minWidth: 0,
       }}
     >
       {/* Selected checkmark */}

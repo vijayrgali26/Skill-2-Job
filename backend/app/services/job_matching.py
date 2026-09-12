@@ -85,10 +85,10 @@ class JobMatchingEngine:
         """
         # 1. Get student profile
         profile = StudentProfile.query.filter_by(user_id=student_id).first()
-        if not profile or not profile.skill_vector_json:
+        if not profile:
             return []
 
-        student_vector_data = self._parse_vector_json(profile.skill_vector_json)
+        student_vector_data = self._get_student_vector_data(profile)
         if student_vector_data is None:
             return []
 
@@ -113,11 +113,8 @@ class JobMatchingEngine:
             if student_cgpa < threshold:
                 continue
 
-            # Parse job vector
-            if not job.job_vector_json:
-                continue
-
-            job_vector_data = self._parse_vector_json(job.job_vector_json)
+            # Parse cached vectors, with a fallback for older seeded roles.
+            job_vector_data = self._get_job_vector_data(job)
             if job_vector_data is None:
                 continue
 
@@ -197,7 +194,7 @@ class JobMatchingEngine:
                 "recommended_courses": [],
             }
 
-        student_data = self._parse_vector_json(profile.skill_vector_json)
+        student_data = self._get_student_vector_data(profile)
         if student_data is None:
             return {
                 "dream_job": profile.dream_job,
@@ -212,7 +209,7 @@ class JobMatchingEngine:
         student_vector = np.array(student_data["vector"], dtype=float)
         candidates = []
         for job in JobRole.query.filter_by(is_active=True).all():
-            job_data = self._parse_vector_json(job.job_vector_json)
+            job_data = self._get_job_vector_data(job)
             if job_data is None:
                 continue
             job_vector = np.array(job_data["vector"], dtype=float)
@@ -264,6 +261,62 @@ class JobMatchingEngine:
             token for token in re.findall(r"[a-z0-9]+", value.lower())
             if token not in ignored
         } or set(re.findall(r"[a-z0-9]+", value.lower()))
+
+    def _get_job_vector_data(self, job: JobRole) -> dict | None:
+        """Build a vector for legacy roles that have no cached vector."""
+        cached = self._parse_vector_json(job.job_vector_json)
+        if cached is not None:
+            return cached
+
+        required_skills = self._parse_required_skills(job.required_skills_json)
+        if not required_skills:
+            return None
+
+        taxonomy = (
+            SkillTaxonomy.query
+            .filter_by(is_deprecated=False)
+            .order_by(SkillTaxonomy.id)
+            .all()
+        )
+        skill_index = {
+            skill.canonical_name.lower(): index
+            for index, skill in enumerate(taxonomy)
+        }
+        vector = np.zeros(len(skill_index), dtype=float)
+        for required_skill in required_skills:
+            index = skill_index.get(required_skill.strip().lower())
+            if index is not None:
+                vector[index] = 1.0
+        if not np.any(vector):
+            return None
+        return {"vector": vector.tolist(), "skill_index": skill_index}
+
+    def _get_student_vector_data(self, profile: StudentProfile) -> dict | None:
+        cached = self._parse_vector_json(profile.skill_vector_json)
+        if cached is not None:
+            return cached
+
+        skills = self._parse_required_skills(profile.skills_json)
+        if not skills:
+            return None
+        taxonomy = (
+            SkillTaxonomy.query
+            .filter_by(is_deprecated=False)
+            .order_by(SkillTaxonomy.id)
+            .all()
+        )
+        skill_index = {
+            skill.canonical_name.lower(): index
+            for index, skill in enumerate(taxonomy)
+        }
+        vector = np.zeros(len(skill_index), dtype=float)
+        for skill in skills:
+            index = skill_index.get(skill.strip().lower())
+            if index is not None:
+                vector[index] = 1.0
+        if not np.any(vector):
+            return None
+        return {"vector": vector.tolist(), "skill_index": skill_index}
 
     @staticmethod
     def _parse_required_skills(raw_skills: str | None) -> list[str]:

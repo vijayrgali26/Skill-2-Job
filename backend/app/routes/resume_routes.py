@@ -8,7 +8,7 @@ import os
 import hashlib
 from datetime import datetime, timezone
 
-from flask import Blueprint, jsonify, g, Response, current_app, request, send_from_directory
+from flask import Blueprint, jsonify, g, Response, current_app, request, send_file, send_from_directory
 from werkzeug.utils import secure_filename
 
 from app import db
@@ -68,6 +68,42 @@ def _generated_resume_path(upload_folder: str, user_id: int, template_id: str) -
     generated_folder = os.path.join(upload_folder, 'generated_resumes')
     os.makedirs(generated_folder, exist_ok=True)
     return os.path.join(generated_folder, f"{user_id}_{safe_template}.pdf")
+
+
+def _persist_extracted_profile(profile, extracted: dict) -> None:
+    """Merge parsed resume data into the student's profile without clearing data."""
+    from app.models import Certification, Project
+    import json
+
+    for field in ("institution", "degree", "branch", "cgpa", "graduation_year"):
+        value = extracted.get(field)
+        if value not in (None, ""):
+            setattr(profile, field, value)
+
+    skills = extracted.get("skills") or []
+    if skills:
+        profile.skills_json = json.dumps(list(dict.fromkeys(str(skill).strip() for skill in skills if str(skill).strip())))
+
+    existing_projects = {project.title.strip().lower() for project in profile.projects if project.title}
+    for project in extracted.get("projects") or []:
+        title = str(project.get("title") or "").strip()
+        if title and title.lower() not in existing_projects:
+            profile.projects.append(Project(
+                title=title,
+                description=project.get("description") or "",
+                technologies=project.get("technologies") or "",
+            ))
+            existing_projects.add(title.lower())
+
+    existing_certs = {cert.name.strip().lower() for cert in profile.certifications if cert.name}
+    for certification in extracted.get("certifications") or []:
+        name = str(certification.get("name") or "").strip()
+        if name and name.lower() not in existing_certs:
+            profile.certifications.append(Certification(
+                name=name,
+                issuer=certification.get("issuer") or "",
+            ))
+            existing_certs.add(name.lower())
 
 
 # ---------------------------------------------------------------------------
@@ -159,6 +195,10 @@ def parse_resume_for_profile():
     from app.services.resume_parser import ResumeParser
     parser = ResumeParser()
     extracted_data = parser.parse_resume(file_path)
+    _persist_extracted_profile(profile, extracted_data)
+    from app.services.skill_analyzer import SkillAnalyzer
+    SkillAnalyzer().analyze_and_store(profile)
+    db.session.commit()
 
     return jsonify({
         "message": "Resume parsed successfully",
@@ -216,17 +256,10 @@ def upload_resume():
     user = db.session.get(User, user_id)
     profile = user.profile if user else None
     if profile is None:
-        return (
-            jsonify(
-                {
-                    "error": {
-                        "code": "NOT_FOUND",
-                        "message": "Student profile not found",
-                    }
-                }
-            ),
-            404,
-        )
+        from app.models import StudentProfile
+        profile = StudentProfile(user_id=user_id)
+        db.session.add(profile)
+        db.session.flush()
 
     filename = secure_filename(file.filename)
     timestamp = datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')
@@ -242,11 +275,18 @@ def upload_resume():
         stored_filename=stored_filename,
         content_type=file.content_type or 'application/octet-stream',
     )
+    from app.services.resume_parser import ResumeParser
+    extracted_data = ResumeParser().parse_resume(file_path)
+    _persist_extracted_profile(profile, extracted_data)
+    from app.services.skill_analyzer import SkillAnalyzer
+    SkillAnalyzer().analyze_and_store(profile)
     db.session.add(resume_record)
     db.session.commit()
 
     return jsonify({
         "message": "Resume uploaded successfully",
+        "extracted_profile": extracted_data,
+        "profile": profile.to_dict(),
         "upload": resume_record.to_dict(),
     }), 201
 
@@ -312,9 +352,11 @@ def download_upload(upload_id: int):
         )
 
     upload_folder = current_app.config.get('UPLOAD_FOLDER')
-    return send_from_directory(
-        upload_folder,
-        upload.stored_filename,
+    file_path = os.path.join(upload_folder, upload.stored_filename)
+    if not os.path.isfile(file_path):
+        return _validation_error("Uploaded resume file is no longer available", 404)
+    return send_file(
+        file_path,
         as_attachment=True,
         download_name=upload.original_filename,
         mimetype=upload.content_type,
@@ -328,9 +370,8 @@ def generate_resume():
     """Generate a resume for the authenticated student.
 
     Accepts optional JSON body:
-        template (str): Template ID — classic, modern, minimal,
-                        sidebar, executive, photo_classic,
-                        photo_modern, photo_sidebar. Default: classic.
+        template (str): Template ID — classic (without photo) or sidebar
+                        (with student photo). Default: classic.
         profile_override (dict): Optional field overrides to fill
                                  missing profile data inline.
     """
@@ -354,10 +395,17 @@ def generate_resume():
         with open(generated_path, 'wb') as pdf_file:
             pdf_file.write(pdf_bytes)
 
+        profile = db.session.get(User, user_id).profile
+        ats_profile = profile.to_dict()
+        ats_profile.update({"name": user.name if user else "", "email": user.email if user else "",
+                            "phone": user.phone if user else ""})
+        ats_profile.update(profile_override or {})
+        ats_score = generator.calculate_ats_score(ats_profile)
         return jsonify({
             "message": "Resume generated successfully",
             "filename": filename,
             "size_bytes": len(pdf_bytes),
+            "ats_score": ats_score,
         }), 200
     except ValueError as exc:
         return _validation_error(str(exc))
@@ -388,34 +436,44 @@ def download_resume():
     template_id = _normalize_template_id(request.args.get("template", "classic"))
 
     try:
+        user = db.session.get(User, user_id)
+        profile = user.profile if user else None
+        if profile is None:
+            return _validation_error("Student profile not found")
+        ats_profile = {**profile.to_dict(), "name": user.name, "email": user.email, "phone": user.phone}
+        generator = ResumeGenerator()
+        valid, missing = generator.validate_profile(ats_profile)
+        if not valid:
+            return _validation_error(f"Profile is missing required fields: {', '.join(missing)}")
+
         upload_folder = current_app.config.get('UPLOAD_FOLDER')
         generated_path = _generated_resume_path(upload_folder, user_id, template_id)
 
         if os.path.exists(generated_path):
-            user = db.session.get(User, user_id)
-            generator = ResumeGenerator()
             filename = generator.get_download_filename(user.name if user else "Student")
-            return send_from_directory(
-                os.path.dirname(generated_path),
-                os.path.basename(generated_path),
+            response = send_file(
+                generated_path,
                 as_attachment=True,
                 download_name=filename,
                 mimetype="application/pdf",
             )
+            response.headers["X-ATS-Score"] = str(generator.calculate_ats_score(ats_profile))
+            return response
 
-        generator = ResumeGenerator()
         pdf_bytes = generator.generate_resume(user_id, template_id=template_id)
 
         user = db.session.get(User, user_id)
         filename = generator.get_download_filename(user.name)
 
-        return Response(
+        response = Response(
             pdf_bytes,
             content_type="application/pdf",
             headers={
                 "Content-Disposition": f"attachment; filename={filename}",
             },
         )
+        response.headers["X-ATS-Score"] = str(generator.calculate_ats_score(ats_profile))
+        return response
     except ValueError as exc:
         return _validation_error(str(exc))
     except Exception as exc:

@@ -11,7 +11,7 @@ Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 3.1, 4.1, 4.2, 5.1, 5.2, 5.3, 9.1, 9
 import json
 from collections import Counter
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 
 from app import db
 from app.models import StudentProfile, JobRole, Company, Shortlist, User, SkillTaxonomy, UncategorizedSkill
@@ -199,7 +199,10 @@ class DashboardService:
             JobRole.query
             .filter(
                 JobRole.is_active == True,  # noqa: E712
-                JobRole.job_vector_json.isnot(None),
+                or_(
+                    JobRole.job_vector_json.isnot(None),
+                    JobRole.required_skills_json.isnot(None),
+                ),
             )
             .all()
         )

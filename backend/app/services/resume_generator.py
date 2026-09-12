@@ -1,12 +1,8 @@
-"""Resume generator — 6 professional templates (3 no-photo, 3 with photo).
+"""Resume generator — two professional, ATS-friendly templates.
 
 Templates:
   classic      - Blue header, traditional layout          (no photo)
-  modern       - Teal accent, bold dividers               (no photo)
-  minimal      - Black/white, clean typography            (no photo)
-  sidebar      - Dark left sidebar + right content        (photo circle)
-  executive    - Dark banner with white name              (photo circle)
-  photo_card   - Coloured header block with photo area    (photo circle)
+  sidebar      - Dark left sidebar + right content        (student photo)
 """
 
 import json, logging, re
@@ -32,11 +28,7 @@ W, H = A4
 
 PALETTES = {
     "classic":    {"p": "#1a237e", "a": "#3949ab", "m": "#4b5563", "sb": None},
-    "modern":     {"p": "#0d9488", "a": "#0f766e", "m": "#374151", "sb": None},
-    "minimal":    {"p": "#111827", "a": "#374151", "m": "#6b7280", "sb": None},
     "sidebar":    {"p": "#1e293b", "a": "#3b82f6", "m": "#64748b", "sb": "#1e293b"},
-    "executive":  {"p": "#7c3aed", "a": "#a78bfa", "m": "#6b7280", "sb": "#7c3aed"},
-    "photo_card": {"p": "#b91c1c", "a": "#ef4444", "m": "#6b7280", "sb": "#b91c1c"},
 }
 VALID_TEMPLATES = list(PALETTES.keys())
 
@@ -56,6 +48,18 @@ class ResumeGenerator:
                 if v is None or (isinstance(v, str) and not v.strip()):
                     missing.append(dn)
         return (len(missing) == 0, missing)
+
+    def calculate_ats_score(self, profile: dict) -> int:
+        """Return a transparent 0-100 ATS readiness score for generated content."""
+        fields = ("name", "email", "phone", "institution", "degree", "branch")
+        score = sum(1 for field in fields if str(profile.get(field) or "").strip()) * 8
+        skills = self._parse_skills(profile.get("skills_json"))
+        score += min(len(skills), 10) * 3
+        score += min(len(profile.get("projects") or []), 3) * 8
+        score += 8 if profile.get("dream_job") else 0
+        score += 8 if profile.get("cgpa") else 0
+        score += 8 if profile.get("graduation_year") else 0
+        return max(0, min(100, int(score)))
 
     def generate_resume(self, student_id: int, template_id: str = "classic",
                         profile_override: dict = None,
@@ -121,12 +125,9 @@ class ResumeGenerator:
         kwargs = dict(pd=pd, profile=profile, pal=pal, ai=ai_content,
                       ex=ex, photo_b64=photo_base64)
 
-        if tid == "sidebar":      return self._build_sidebar(**kwargs)
-        elif tid == "executive":  return self._build_executive(**kwargs)
-        elif tid == "photo_card": return self._build_photo_card(**kwargs)
-        elif tid == "modern":     return self._build_modern(**kwargs)
-        elif tid == "minimal":    return self._build_minimal(**kwargs)
-        else:                     return self._build_classic(**kwargs)
+        if tid == "sidebar":
+            return self._build_sidebar(**kwargs)
+        return self._build_classic(**kwargs)
 
     def get_download_filename(self, name: str) -> str:
         safe = re.sub(r"[^A-Za-z0-9_-]+", "_", name.strip()).strip("_") or "Student"
@@ -274,15 +275,16 @@ class ResumeGenerator:
         WHITE = colors.white
         st = getSampleStyleSheet()
 
-        SB_W = 2.0 * inch
-        MARGIN = 0.3 * inch
-        CONT_X = SB_W + MARGIN + 8
-        CONT_W = W - CONT_X - MARGIN
+        PAGE_MARGIN = 0.42 * inch
+        SB_W = 2.05 * inch
+        COLUMN_GAP = 0.22 * inch
+        CONT_X = PAGE_MARGIN + SB_W + COLUMN_GAP
+        CONT_W = W - CONT_X - PAGE_MARGIN
 
         def on_page(canvas, doc):
             canvas.setFillColor(P)
-            canvas.rect(0, 0, SB_W + MARGIN, H, fill=1, stroke=0)
-            cx = (SB_W + MARGIN) / 2
+            canvas.rect(0, 0, PAGE_MARGIN + SB_W, H, fill=1, stroke=0)
+            cx = (PAGE_MARGIN + SB_W) / 2
             cy = H - 0.85 * inch
             # Draw photo or initials circle
             if photo_b64:
@@ -358,10 +360,10 @@ class ResumeGenerator:
         right += self._certs_section(profile, sec_s, body_s)
         right += self._courses_section(ex, sec_s, body_s)
 
-        left_frame  = Frame(MARGIN/2, MARGIN, SB_W, H-2*MARGIN,
-                            leftPadding=6, rightPadding=6, topPadding=4, bottomPadding=4, id="sidebar")
-        right_frame = Frame(CONT_X, MARGIN, CONT_W, H-2*MARGIN,
-                            leftPadding=4, rightPadding=4, topPadding=4, bottomPadding=4, id="content")
+        left_frame  = Frame(PAGE_MARGIN, PAGE_MARGIN, SB_W, H-2*PAGE_MARGIN,
+                            leftPadding=8, rightPadding=8, topPadding=6, bottomPadding=6, id="sidebar")
+        right_frame = Frame(CONT_X, PAGE_MARGIN, CONT_W, H-2*PAGE_MARGIN,
+                            leftPadding=0, rightPadding=0, topPadding=6, bottomPadding=6, id="content")
         tpl = PageTemplate(id="sidebar_tpl", frames=[left_frame, right_frame], onPage=on_page)
         doc = BaseDocTemplate(buf, pagesize=A4, pageTemplates=[tpl])
         doc.build(left + right)
@@ -801,7 +803,17 @@ class ResumeGenerator:
         for label, lst in cats.items():
             el.append(Paragraph(
                 f"<b>{self._t(label)}:</b> {self._t(', '.join(lst))}", body_s))
+            for skill in lst:
+                el.append(Paragraph(self._t(self._skill_sentence(skill, label)), body_s))
         return el
+
+    @staticmethod
+    def _skill_sentence(skill, category):
+        """Turn a skill label into useful, searchable resume language."""
+        return (
+            f"Applied {skill} in {category.lower()} work to build reliable solutions, "
+            "collaborate with stakeholders, and deliver measurable outcomes."
+        )
 
     def _projects_section(self, profile, ai, sec_s, body_s, bul_s,
                           header="Projects", hr_color=None):

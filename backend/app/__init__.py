@@ -36,6 +36,12 @@ def create_app(config_name='default'):
     )
     app.config.from_object(config_by_name[config_name])
 
+    upload_folder = app.config.get('UPLOAD_FOLDER')
+    if upload_folder and not os.path.isabs(upload_folder):
+        app.config['UPLOAD_FOLDER'] = os.path.normpath(
+            os.path.join(os.path.abspath(os.path.dirname(__file__)), '..', upload_folder)
+        )
+
     # Initialize extensions
     db.init_app(app)
     migrate.init_app(app, db)
