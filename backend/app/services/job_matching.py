@@ -110,7 +110,7 @@ class JobMatchingEngine:
         for job in job_roles:
             # 3. Check eligibility: CGPA threshold
             threshold = job.cgpa_threshold or 0.0
-            if student_cgpa < threshold:
+            if profile.cgpa is not None and student_cgpa < threshold:
                 continue
 
             # Parse cached vectors, with a fallback for older seeded roles.
@@ -297,8 +297,6 @@ class JobMatchingEngine:
             return cached
 
         skills = self._parse_required_skills(profile.skills_json)
-        if not skills:
-            return None
         taxonomy = (
             SkillTaxonomy.query
             .filter_by(is_deprecated=False)
@@ -314,8 +312,8 @@ class JobMatchingEngine:
             index = skill_index.get(skill.strip().lower())
             if index is not None:
                 vector[index] = 1.0
-        if not np.any(vector):
-            return None
+        # Keep incomplete profiles eligible for demo recommendations. Their
+        # results are ranked by dream-job title until skills are added.
         return {"vector": vector.tolist(), "skill_index": skill_index}
 
     @staticmethod

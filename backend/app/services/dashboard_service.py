@@ -210,7 +210,7 @@ class DashboardService:
         count = 0
         for job in matched_jobs:
             threshold = job.cgpa_threshold or 0.0
-            if student_cgpa >= threshold:
+            if profile.cgpa is None or student_cgpa >= threshold:
                 count += 1
 
         return count
